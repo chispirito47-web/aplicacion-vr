@@ -1,0 +1,9 @@
+{
+  "name": "RA Casa Dams",
+  "short_name": "RA Casa Dams",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#F5F1EB",
+  "theme_color": "#2B2420",
+  "icons": []
+}
