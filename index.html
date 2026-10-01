@@ -1,0 +1,742 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RA — Casa Dams</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2B2420">
+<style>
+html,body{margin:0;background:#F5F1EB;}
+.kzn-arc-wrap{max-width:760px;margin:0 auto;padding:24px 20px 64px;font-family:system-ui,sans-serif;}
+.kzn-arc-title{font-weight:300;font-size:clamp(1.6rem,3vw,2.2rem);color:#2B2420;margin:0 0 12px;}
+.kzn-arc-intro{font-size:15px;line-height:1.7;color:#2B2420;opacity:.8;margin:0 0 24px;}
+.kzn-arc-steps{background:#F5F1EB;border-radius:10px;padding:20px 22px;margin-bottom:20px;font-size:14px;line-height:1.9;color:#2B2420;}
+.kzn-arc-steps b{display:block;margin-bottom:6px;}
+#kzn-canvas-wrap{position:relative;}
+#kzn-ar-status{font-size:13px;color:#2B2420;opacity:.7;margin-top:10px;text-align:center;}
+#kzn-offline-status{font-size:12px;color:#2B2420;opacity:.6;text-align:center;margin-top:4px;}
+</style>
+</head>
+<body>
+
+<div class="kzn-arc-wrap">
+  <h1 class="kzn-arc-title">RA — Casa Dams</h1>
+  <p class="kzn-arc-intro">Puedes agregar varios muebles a la vez, moverlos y rotarlos, y quitarlos si no los quieres. El menú aparece flotando frente a ti dentro del visor. Funciona sin internet después de la primera carga.</p>
+
+  <div class="kzn-arc-steps">
+    <b>Cómo usarlo en la Quest 3</b>
+    1. Ponte las gafas, abre esta página, pulsa "ENTER AR".<br>
+    2. Verás un panel flotando abajo, frente a ti, con los muebles agrupados por categoría: <b>Comedores · Sillas · Salas</b>. Apunta con el mando y aprieta el gatillo (trigger) sobre el mueble que quieras agregar. El botón se ilumina para confirmar que sí le diste, y el mueble aparece frente a ti, siempre apoyado en el piso.<br>
+    2b. Verás una rejilla dorada tenue en el suelo: te sirve de referencia para saber exactamente dónde está el nivel del piso. Ningún mueble puede quedar enterrado por debajo de esa rejilla, ni con los botones Subir/Bajar ni moviéndolo con la mano — el sistema no lo deja bajar más de la cuenta.<br>
+    2c. <b>Si cambias de habitación o la rejilla no queda a ras del piso real:</b> aprieta el botón <b>"Recalibrar Piso"</b> (abajo del todo, a la derecha). El panel te pedirá que bajes el mando hasta tocar el piso real y aprietes el gatillo ahí — apenas lo hagas, la rejilla y el límite de altura se ajustan a ese nuevo nivel.<br>
+    3. <b>Para mover el panel de sitio:</b> apunta a cualquier parte del panel y aprieta el gatillo lateral (grip). Muévelo a donde te sea más cómodo y suelta para dejarlo quieto ahí.<br>
+    4. <b>Para mover/rotar un mueble:</b> apunta al mueble con el mando y aprieta el gatillo lateral (grip) y mantenlo. El mueble sigue a tu mano. Suelta para dejarlo.<br>
+    5. <b>Para seleccionarlo sin moverlo</b> (y poder ajustarlo fino): apunta al mueble y aprieta el gatillo normal una vez. Verás un contorno alrededor.<br>
+    6. Con un mueble seleccionado, usa los botones de abajo del panel: <b>Girar Izq · Girar Der · Subir · Bajar · Enderezar · Eliminar</b>. "Enderezar" corrige un mueble que quedó torcido al moverlo con la mano, sin perder hacia dónde estaba girado.<br>
+    7. Botón <b>"Ver Medidas"</b>: con un mueble seleccionado, aprieta este botón y aparece un recuadro dorado alrededor del mueble con su ancho, alto y fondo en metros. Vuelve a apretarlo para ocultarlas. Al seleccionar otro mueble o quitar la selección, las medidas se ocultan automáticamente.<br>
+    8. Puedes agregar varios muebles a la vez y organizarlos como una sala completa. Apunta al aire vacío (fuera del panel y de los muebles) y aprieta el gatillo para quitar la selección.
+  </div>
+
+  <div id="kzn-canvas-wrap">
+    <div id="kzn-ar-status">Cargando…</div>
+    <div id="kzn-offline-status"></div>
+  </div>
+</div>
+
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { ARButton } from 'three/addons/webxr/ARButton.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const statusEl = document.getElementById('kzn-ar-status');
+const offlineEl = document.getElementById('kzn-offline-status');
+
+const PRODUCTS = [
+  { id:'silla',            name:'Silla Splendor',        url:'https://cdn.shopify.com/3d/models/o/aa81cb1246358eb0/silla_comedor_splendor.glb',    axis:'height', target:0.95 },
+  { id:'comedor',          name:'Comedor Vera',          url:'https://cdn.shopify.com/3d/models/o/48cdabd4155fe5e0/comedor_vera.glb',               axis:'height', target:0.78 },
+  { id:'divan',            name:'Sala Divan',            url:'https://cdn.shopify.com/3d/models/o/f7f4e50cd23831be/sala_divan_model.glb',           axis:'horizontal', target:2.15 },
+  { id:'japandi',          name:'Sala Japandi',          url:'https://cdn.shopify.com/3d/models/o/5dc0999e90c04ae5/sala-japandi-3d.glb',            axis:'horizontal', target:3.70 },
+  { id:'comedor_esc',      name:'Comedor Escandinava',   url:'https://cdn.shopify.com/3d/models/o/d83fc8c5d570a1a5/comedor-escandinava-3d.glb',     axis:'height', target:0.77 },
+  { id:'comedor_kyoto',    name:'Comedor Kyoto',         url:'https://cdn.shopify.com/3d/models/o/35b295f195c5a959/comedor_kyoto.glb',              axis:'height', target:0.80 },
+  { id:'comedor_trebol',   name:'Comedor Trébol Natural',url:'https://cdn.shopify.com/3d/models/o/843cbd0c06024244/comedor_trebol_natural.glb',     axis:'height', target:0.82 },
+  { id:'comedor_montana',  name:'Comedor Montana Plus',  url:'https://cdn.shopify.com/3d/models/o/4c1674432025332d/comedor_montana_plus.glb',       axis:'horizontal', target:2.30 },
+  { id:'comedor_caprini',  name:'Comedor Caprini',       url:'https://cdn.shopify.com/3d/models/o/e9ed54f03d0dbe94/comedor_caprini.glb',            axis:'height', target:0.75 },
+  { id:'alaska',           name:'Sala Alaska',           url:'https://cdn.shopify.com/3d/models/o/026a3d7bf3ddb773/sala_alaska_model.glb',          axis:'height', target:0.87 },
+  { id:'silla_danesa',     name:'Silla Danesa',          url:'https://cdn.shopify.com/3d/models/o/07a339775c312ed0/silla_comedor_danesa.glb',       axis:'height', target:1.00 },
+  { id:'silla_duna',       name:'Silla Duna Redondo',    url:'https://cdn.shopify.com/3d/models/o/e035887527909ced/silla_comedor_dunda_redondo.glb',axis:'height', target:0.78 },
+  { id:'silla_esc',        name:'Silla Escandinava',     url:'https://cdn.shopify.com/3d/models/o/ffa75dbf55478339/silla_escandinava.glb',          axis:'height', target:0.89 },
+  { id:'silla_marmol',     name:'Silla Mármol Importado',url:'https://cdn.shopify.com/3d/models/o/20c6340ba48bcc1d/silla_comedor_marmol.glb',       axis:'height', target:0.85 },
+  { id:'silla_mp_natura',  name:'Silla M.P. Natura',     url:'https://cdn.shopify.com/3d/models/o/3cee3c64a301b694/comedor_maria_palito_natura.glb', axis:'height', target:0.79 },
+  { id:'yemen',            name:'Sala Yemen',            url:'https://cdn.shopify.com/3d/models/o/05a0115714f7ea69/sala_yemen.glb',                  axis:'horizontal', target:2.00 }
+];
+
+let camera, scene, renderer;
+let controller1, controller2;
+let hud, hudBackdrop, dimsBtnRef, calibrateBtnRef;
+let floorOffsetY = 0;
+let calibrating = false;
+let floorGridRef;
+let placed = []; // {group, hit, box, product}
+let selected = null;
+let grabbedBy = { }; // controller.uuid -> {type:'furniture'|'hud', item?}
+let raycaster = new THREE.Raycaster();
+let statusText;
+
+const PX_PER_M = 900; // resolución constante para que ningún texto salga borroso
+const GOLD = '#D9B98A';
+const CREAM = '#F5F1EB';
+
+function roundRectPath(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+
+function fitFont(ctx, text, maxWidth, startPx){
+  let size = startPx;
+  ctx.font = 'bold ' + size + 'px sans-serif';
+  while (ctx.measureText(text).width > maxWidth && size > 10){
+    size -= 2;
+    ctx.font = 'bold ' + size + 'px sans-serif';
+  }
+  return size;
+}
+
+function makeButton(label, w, h, bg, fg){
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(w * PX_PER_M);
+  canvas.height = Math.round(h * PX_PER_M);
+  const ctx = canvas.getContext('2d');
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.anisotropy = 4;
+  function draw(fillColor){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    roundRectPath(ctx, canvas.width*0.012, canvas.height*0.03, canvas.width*0.976, canvas.height*0.94, canvas.height*0.16);
+    ctx.fillStyle = fillColor || bg || '#2B2420';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(217,185,138,0.35)';
+    ctx.lineWidth = canvas.height*0.03;
+    ctx.stroke();
+    ctx.fillStyle = fg || '#fff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const size = fitFont(ctx, label, canvas.width*0.86, Math.round(canvas.height*0.42));
+    ctx.font = 'bold ' + size + 'px sans-serif';
+    ctx.fillText(label, canvas.width/2, canvas.height/2 + canvas.height*0.02);
+    tex.needsUpdate = true;
+  }
+  draw();
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent:true });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w,h), mat);
+  mesh.userData.highlight = function(on){ draw(on ? '#B08A52' : (bg || '#2B2420')); };
+  mesh.userData.setLabel = function(newLabel){ label = newLabel; draw(); };
+  return mesh;
+}
+
+function makeTag(text){
+  const canvas = document.createElement('canvas');
+  canvas.width = 420; canvas.height = 150;
+  const ctx = canvas.getContext('2d');
+  roundRectPath(ctx, 4, 4, canvas.width-8, canvas.height-8, 24);
+  ctx.fillStyle = 'rgba(31,26,22,0.88)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(217,185,138,0.7)';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  ctx.fillStyle = GOLD;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 58px sans-serif';
+  ctx.fillText(text, canvas.width/2, canvas.height/2);
+  const tex = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.SpriteMaterial({ map:tex, transparent:true, depthTest:false, sizeAttenuation:true });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(0.26, 0.093, 1);
+  return sprite;
+}
+
+function buildDimsVisual(item){
+  const d = item.dims;
+  const group = new THREE.Group();
+
+  const boxGeo = new THREE.BoxGeometry(d.x, d.y, d.z);
+  const edges = new THREE.EdgesGeometry(boxGeo);
+  const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color:0xD9B98A }));
+  group.add(line);
+
+  const wTag = makeTag('Ancho ' + d.x.toFixed(2) + ' m');
+  wTag.position.set(0, -d.y/2 - 0.08, d.z/2 + 0.02);
+  group.add(wTag);
+
+  const hTag = makeTag('Alto ' + d.y.toFixed(2) + ' m');
+  hTag.position.set(d.x/2 + 0.16, 0, d.z/2 + 0.02);
+  group.add(hTag);
+
+  const dTag = makeTag('Fondo ' + d.z.toFixed(2) + ' m');
+  dTag.position.set(-d.x/2 - 0.16, -d.y/2, 0);
+  group.add(dTag);
+
+  group.position.y = d.y/2;
+  item.group.add(group);
+  item.dimsGroup = group;
+}
+
+function toggleDims(){
+  if (!selected) return;
+  if (!selected.dimsGroup){ buildDimsVisual(selected); }
+  selected.dimsVisible = !selected.dimsVisible;
+  selected.dimsGroup.visible = selected.dimsVisible;
+  if (dimsBtnRef) dimsBtnRef.userData.setLabel(selected.dimsVisible ? 'Ocultar Medidas' : 'Ver Medidas');
+}
+
+function toggleCalibrate(){
+  calibrating = !calibrating;
+  if (calibrating){
+    if (calibrateBtnRef) calibrateBtnRef.userData.setLabel('Toca el piso y aprieta');
+    statusText.userData.set('Baja el mando hasta el piso real y aprieta el gatillo');
+  } else {
+    if (calibrateBtnRef) calibrateBtnRef.userData.setLabel('Recalibrar Piso');
+    statusText.userData.set(selected ? selected.product.name : 'Nada seleccionado');
+  }
+}
+
+function hideDims(item){
+  if (item && item.dimsGroup){
+    item.dimsGroup.visible = false;
+    item.dimsVisible = false;
+  }
+  if (dimsBtnRef) dimsBtnRef.userData.setLabel('Ver Medidas');
+}
+
+function makeTitlePlate(w,h){
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(w * PX_PER_M);
+  canvas.height = Math.round(h * PX_PER_M);
+  const ctx = canvas.getContext('2d');
+  const tex = new THREE.CanvasTexture(canvas);
+  roundRectPath(ctx, 0, 0, canvas.width, canvas.height, canvas.height*0.25);
+  ctx.fillStyle = 'rgba(31,26,22,0.92)';
+  ctx.fill();
+  ctx.fillStyle = GOLD;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  const titleSize = fitFont(ctx, 'CASA DAMS', canvas.width*0.9, Math.round(canvas.height*0.44));
+  ctx.font = 'bold ' + titleSize + 'px sans-serif';
+  ctx.fillText('CASA DAMS', canvas.width/2, canvas.height*0.5);
+  ctx.fillStyle = CREAM;
+  ctx.font = Math.round(canvas.height*0.22) + 'px sans-serif';
+  ctx.fillText('Catálogo en RA · arrastra el panel con el gatillo lateral', canvas.width/2, canvas.height*0.8);
+  tex.needsUpdate = true;
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent:true });
+  return new THREE.Mesh(new THREE.PlaneGeometry(w,h), mat);
+}
+
+function makeCaption(text, w, h){
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(w * PX_PER_M);
+  canvas.height = Math.round(h * PX_PER_M);
+  const ctx = canvas.getContext('2d');
+  const tex = new THREE.CanvasTexture(canvas);
+  ctx.fillStyle = GOLD;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const size = fitFont(ctx, text, canvas.width*0.9, Math.round(canvas.height*0.7));
+  ctx.font = 'bold ' + size + 'px sans-serif';
+  ctx.globalAlpha = 0.85;
+  ctx.fillText(text.toUpperCase(), canvas.width/2, canvas.height/2);
+  tex.needsUpdate = true;
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent:true });
+  return new THREE.Mesh(new THREE.PlaneGeometry(w,h), mat);
+}
+
+function makeLabelPanel(w,h){
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(w * PX_PER_M);
+  canvas.height = Math.round(h * PX_PER_M);
+  const ctx = canvas.getContext('2d');
+  const tex = new THREE.CanvasTexture(canvas);
+  function set(text){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    roundRectPath(ctx, canvas.width*0.01, canvas.height*0.05, canvas.width*0.98, canvas.height*0.9, canvas.height*0.3);
+    ctx.fillStyle = 'rgba(31,26,22,0.7)';
+    ctx.fill();
+    ctx.fillStyle = selected ? GOLD : CREAM;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const size = fitFont(ctx, text, canvas.width*0.88, Math.round(canvas.height*0.4));
+    ctx.font = 'bold ' + size + 'px sans-serif';
+    ctx.fillText(text, canvas.width/2, canvas.height/2);
+    tex.needsUpdate = true;
+  }
+  set('Nada seleccionado');
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent:true });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w,h), mat);
+  mesh.userData.set = set;
+  return mesh;
+}
+
+function buildHud(){
+  hud = new THREE.Group();
+
+  const bw = 0.86;
+  const rowH = 0.065, capH = 0.024, titleH = 0.075, statusH = 0.05;
+  const padTop = 0.028, padBottom = 0.028;
+  const gapAfterTitle = 0.014, gapAfterStatus = 0.02, gapAfterCap = 0.008, gapAfterRow = 0.02, gapAfterActionRow = 0.014;
+
+  const comedores = [
+    { label:'Comedor Vera', id:'comedor' },
+    { label:'C. Escandinava', id:'comedor_esc' },
+    { label:'C. Kyoto', id:'comedor_kyoto' },
+    { label:'C. Trébol', id:'comedor_trebol' },
+    { label:'C. Montana', id:'comedor_montana' },
+    { label:'C. Caprini', id:'comedor_caprini' }
+  ];
+  const sillas = [
+    { label:'Silla Splendor', id:'silla' },
+    { label:'Silla Danesa', id:'silla_danesa' },
+    { label:'Silla Duna', id:'silla_duna' },
+    { label:'Silla Escand.', id:'silla_esc' },
+    { label:'Silla Mármol', id:'silla_marmol' },
+    { label:'Silla M.P. Natura', id:'silla_mp_natura' }
+  ];
+  const salas = [
+    { label:'Sala Divan', id:'divan' },
+    { label:'Sala Japandi', id:'japandi' },
+    { label:'Sala Alaska', id:'alaska' },
+    { label:'Sala Yemen', id:'yemen' }
+  ];
+  const actionItems = [
+    { label:'Girar Izq', action: () => rotateSelected(-1) },
+    { label:'Girar Der', action: () => rotateSelected(1) },
+    { label:'Subir', action: () => moveSelected(0.05) },
+    { label:'Bajar', action: () => moveSelected(-0.05) },
+    { label:'Enderezar', action: () => straightenSelected() },
+    { label:'Eliminar', action: () => deleteSelected(), bg:'#7a3226' }
+  ];
+
+  const totalH = titleH + gapAfterTitle + statusH + gapAfterStatus
+    + (capH + gapAfterCap + rowH + gapAfterRow) * 3
+    + capH + gapAfterCap + rowH + gapAfterActionRow
+    + rowH;
+  const bh = totalH + padTop + padBottom;
+
+  const backdropCanvas = document.createElement('canvas');
+  backdropCanvas.width = Math.round(bw * PX_PER_M);
+  backdropCanvas.height = Math.round(bh * PX_PER_M);
+  const bctx = backdropCanvas.getContext('2d');
+  roundRectPath(bctx, 0, 0, backdropCanvas.width, backdropCanvas.height, backdropCanvas.height*0.04);
+  const bgGrad = bctx.createLinearGradient(0, 0, 0, backdropCanvas.height);
+  bgGrad.addColorStop(0, 'rgba(58,46,36,0.88)');
+  bgGrad.addColorStop(1, 'rgba(30,24,20,0.88)');
+  bctx.fillStyle = bgGrad;
+  bctx.fill();
+  bctx.strokeStyle = 'rgba(217,185,138,0.8)';
+  bctx.lineWidth = backdropCanvas.height*0.01;
+  bctx.stroke();
+  roundRectPath(bctx, backdropCanvas.width*0.012, backdropCanvas.height*0.012, backdropCanvas.width*0.976, backdropCanvas.height*0.976, backdropCanvas.height*0.035);
+  bctx.strokeStyle = 'rgba(217,185,138,0.28)';
+  bctx.lineWidth = backdropCanvas.height*0.003;
+  bctx.stroke();
+  const backdropTex = new THREE.CanvasTexture(backdropCanvas);
+  hudBackdrop = new THREE.Mesh(new THREE.PlaneGeometry(bw,bh), new THREE.MeshBasicMaterial({ map:backdropTex, transparent:true }));
+  hudBackdrop.position.set(0, 0, -0.006);
+  hud.add(hudBackdrop);
+
+  let cursorY = bh/2 - padTop;
+  function placeCentered(mesh, h){
+    cursorY -= h/2;
+    mesh.position.y = cursorY;
+    hud.add(mesh);
+    cursorY -= h/2;
+  }
+  function gapDown(g){ cursorY -= g; }
+
+  const title = makeTitlePlate(0.78, titleH);
+  placeCentered(title, titleH);
+  gapDown(gapAfterTitle);
+
+  statusText = makeLabelPanel(0.64, statusH);
+  placeCentered(statusText, statusH);
+  gapDown(gapAfterStatus);
+
+  function addButtonRow(items, capLabel, btnW, bg){
+    const cap = makeCaption(capLabel, 0.6, capH);
+    placeCentered(cap, capH);
+    gapDown(gapAfterCap);
+    const gapX = 0.01;
+    const totalW = items.length * btnW + (items.length-1) * gapX;
+    let x0 = -totalW/2 + btnW/2;
+    const rowY = cursorY - rowH/2;
+    items.forEach((it,i) => {
+      const btn = makeButton(it.label, btnW, rowH, bg, GOLD);
+      btn.position.set(x0 + i*(btnW+gapX), rowY, 0);
+      btn.userData.onSelect = () => addProduct(it.id);
+      hud.add(btn);
+    });
+    cursorY = rowY - rowH/2;
+    gapDown(gapAfterRow);
+  }
+
+  addButtonRow(comedores, 'Comedores', 0.128, '#5C3A28');
+  addButtonRow(sillas, 'Sillas', 0.132, '#2E4A3E');
+  addButtonRow(salas, 'Salas', 0.173, '#3A2E52');
+
+  const capAction = makeCaption('Ajustar el mueble seleccionado', 0.6, capH);
+  placeCentered(capAction, capH);
+  gapDown(gapAfterCap);
+
+  const btnW2 = 0.118, gapX2 = 0.012;
+  const totalW2 = actionItems.length * btnW2 + (actionItems.length-1)*gapX2;
+  let x1 = -totalW2/2 + btnW2/2;
+  const actionRowY = cursorY - rowH/2;
+  actionItems.forEach((b,i) => {
+    const btn = makeButton(b.label, btnW2, rowH, b.bg || '#2B2420', GOLD);
+    btn.position.set(x1 + i*(btnW2+gapX2), actionRowY, 0);
+    btn.userData.onSelect = b.action;
+    hud.add(btn);
+  });
+  cursorY = actionRowY - rowH/2;
+  gapDown(gapAfterActionRow);
+
+  const lastRowY = cursorY - rowH/2;
+  const dimsBtn = makeButton('Ver Medidas', 0.28, rowH, '#3B4A3A', GOLD);
+  dimsBtn.position.set(-0.155, lastRowY, 0);
+  dimsBtn.userData.onSelect = () => toggleDims();
+  dimsBtnRef = dimsBtn;
+  hud.add(dimsBtn);
+
+  const calibrateBtn = makeButton('Recalibrar Piso', 0.28, rowH, '#3A4A5A', GOLD);
+  calibrateBtn.position.set(0.155, lastRowY, 0);
+  calibrateBtn.userData.onSelect = () => toggleCalibrate();
+  calibrateBtnRef = calibrateBtn;
+  hud.add(calibrateBtn);
+
+  scene.add(hud);
+}
+
+let hudPlaced = false;
+function placeHudOnce(){
+  if (hudPlaced) return;
+  const xrCam = renderer.xr.getCamera(camera);
+  const camPos = new THREE.Vector3();
+  xrCam.getWorldPosition(camPos);
+  const dirVec = new THREE.Vector3();
+  xrCam.getWorldDirection(dirVec);
+  dirVec.y = 0;
+  if (dirVec.lengthSq() < 0.0001) dirVec.set(0,0,-1);
+  dirVec.normalize();
+  const pos = camPos.clone().addScaledVector(dirVec, 0.9);
+  pos.y = camPos.y - 0.35;
+  hud.position.copy(pos);
+  hud.lookAt(camPos.x, hud.position.y, camPos.z);
+  hudPlaced = true;
+}
+
+function init(){
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.01, 30);
+  scene.add(camera);
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 3));
+  const dir = new THREE.DirectionalLight(0xffffff, 1.5);
+  dir.position.set(1,2,1);
+  scene.add(dir);
+
+  floorGridRef = new THREE.GridHelper(6, 24, 0xD9B98A, 0x8a7455);
+  floorGridRef.material.transparent = true;
+  floorGridRef.material.opacity = 0.3;
+  floorGridRef.position.y = floorOffsetY;
+  scene.add(floorGridRef);
+
+  renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.xr.enabled = true;
+  document.body.appendChild(renderer.domElement);
+
+  const arButton = ARButton.createButton(renderer, { requiredFeatures:['local-floor'] });
+  document.getElementById('kzn-canvas-wrap').appendChild(arButton);
+
+  buildHud();
+
+  controller1 = renderer.xr.getController(0);
+  controller2 = renderer.xr.getController(1);
+  scene.add(controller1, controller2);
+
+  const rayGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-3)]);
+  [controller1, controller2].forEach(function(ctrl){
+    const line = new THREE.Line(rayGeo, new THREE.LineBasicMaterial({ color:0xffffff, transparent:true, opacity:0.4 }));
+    line.name = 'ray';
+    line.scale.z = 1;
+    ctrl.add(line);
+    ctrl.addEventListener('selectstart', function(){ onSelect(ctrl); });
+    ctrl.addEventListener('squeezestart', function(){ onSqueezeStart(ctrl); });
+    ctrl.addEventListener('squeezeend', function(){ onSqueezeEnd(ctrl); });
+  });
+
+  statusEl.textContent = 'Listo. Pulsa ENTER AR arriba.';
+
+  window.addEventListener('resize', function(){
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  renderer.setAnimationLoop(render);
+}
+
+function loaderFor(product, onDone){
+  const loader = new GLTFLoader();
+  loader.load(product.url, function(gltf){
+    const model = gltf.scene;
+    const box = new THREE.Box3().setFromObject(model);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const current = product.axis === 'height' ? size.y : Math.max(size.x, size.z);
+    const factor = current > 0 ? (product.target / current) : 1;
+    model.scale.setScalar(factor);
+    const realSize = size.clone().multiplyScalar(factor);
+    onDone(model, realSize);
+  }, undefined, function(err){
+    statusEl.textContent = 'Error cargando ' + product.name + ': ' + err.message;
+  });
+}
+
+function spawnPositionOffset(index){
+  const xrCam = renderer.xr.getCamera(camera);
+  const camPos = new THREE.Vector3();
+  xrCam.getWorldPosition(camPos);
+  const dirVec = new THREE.Vector3();
+  xrCam.getWorldDirection(dirVec);
+  dirVec.y = 0;
+  if (dirVec.lengthSq() < 0.0001) dirVec.set(0,0,-1);
+  dirVec.normalize();
+  const side = new THREE.Vector3(-dirVec.z, 0, dirVec.x);
+  const lane = (index % 3) - 1;
+  const spawn = camPos.clone().addScaledVector(dirVec, 1.8).addScaledVector(side, lane * 0.9);
+  spawn.y = floorOffsetY;
+  return spawn;
+}
+
+function addProduct(id){
+  const product = PRODUCTS.find(function(p){ return p.id === id; });
+  if (!product) return;
+  statusEl.textContent = 'Cargando ' + product.name + '…';
+  loaderFor(product, function(model, realSize){
+    const group = new THREE.Group();
+    group.add(model);
+    const pos = spawnPositionOffset(placed.length);
+    group.position.copy(pos);
+    scene.add(group);
+
+    let box = new THREE.Box3().setFromObject(group);
+    const groundCorrection = floorOffsetY - box.min.y;
+    group.position.y += groundCorrection;
+    box = new THREE.Box3().setFromObject(group);
+    const floorPad = group.position.y - floorOffsetY;
+
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const hitGeo = new THREE.BoxGeometry(Math.max(size.x,0.2), Math.max(size.y,0.2), Math.max(size.z,0.2));
+    const hitMat = new THREE.MeshBasicMaterial({ visible:false });
+    const hit = new THREE.Mesh(hitGeo, hitMat);
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    hit.position.copy(group.worldToLocal(center.clone()));
+    group.add(hit);
+
+    const item = { group:group, hit:hit, product:product, outline:null, dims:{ x:realSize.x, y:realSize.y, z:realSize.z }, dimsGroup:null, dimsVisible:false, floorPad:floorPad };
+    placed.push(item);
+    selectItem(item);
+    statusEl.textContent = product.name + ' agregado.';
+  });
+}
+
+function selectItem(item){
+  if (selected === item) return;
+  if (selected) hideDims(selected);
+  clearSelectionOutline();
+  selected = item;
+  if (item){
+    const helper = new THREE.BoxHelper(item.group, 0xffcc66);
+    scene.add(helper);
+    item.outline = helper;
+    statusText.userData.set(item.product.name);
+  } else {
+    statusText.userData.set('Nada seleccionado');
+  }
+  if (dimsBtnRef) dimsBtnRef.userData.setLabel('Ver Medidas');
+}
+
+function clearSelectionOutline(){
+  if (selected && selected.outline){
+    scene.remove(selected.outline);
+    selected.outline = null;
+  }
+}
+
+function deselect(){
+  if (selected) hideDims(selected);
+  clearSelectionOutline();
+  selected = null;
+  statusText.userData.set('Nada seleccionado');
+}
+
+function rotateSelected(dir){
+  if (!selected) return;
+  selected.group.rotation.y += dir * (Math.PI/12);
+}
+function moveSelected(dy){
+  if (!selected) return;
+  const minY = floorOffsetY + (selected.floorPad || 0);
+  selected.group.position.y = Math.max(minY, selected.group.position.y + dy);
+}
+function straightenSelected(){
+  if (!selected) return;
+  const y = selected.group.rotation.y;
+  selected.group.rotation.set(0, y, 0);
+}
+function deleteSelected(){
+  if (!selected) return;
+  hideDims(selected);
+  scene.remove(selected.group);
+  if (selected.outline) scene.remove(selected.outline);
+  placed = placed.filter(function(p){ return p !== selected; });
+  selected = null;
+  statusText.userData.set('Nada seleccionado');
+}
+
+function intersectHud(controller){
+  raycaster.setFromXRController ? raycaster.setFromXRController(controller) : setRaycasterFromController(controller);
+  return raycaster.intersectObjects(hud.children, false);
+}
+function setRaycasterFromController(controller){
+  const tempMatrix = new THREE.Matrix4();
+  tempMatrix.identity().extractRotation(controller.matrixWorld);
+  raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+  raycaster.ray.direction.set(0,0,-1).applyMatrix4(tempMatrix);
+}
+
+function onSelect(controller){
+  if (calibrating){
+    const ctrlPos = new THREE.Vector3();
+    controller.getWorldPosition(ctrlPos);
+    floorOffsetY = ctrlPos.y;
+    if (floorGridRef) floorGridRef.position.y = floorOffsetY;
+    placed.forEach(function(item){
+      item.group.position.y = floorOffsetY + (item.floorPad || 0);
+    });
+    calibrating = false;
+    if (calibrateBtnRef) calibrateBtnRef.userData.setLabel('Recalibrar Piso');
+    statusText.userData.set('Piso recalibrado');
+    setTimeout(function(){ statusText.userData.set(selected ? selected.product.name : 'Nada seleccionado'); }, 1400);
+    return;
+  }
+
+  setRaycasterFromController(controller);
+
+  const hudHits = raycaster.intersectObjects(hud.children, false);
+  if (hudHits.length){
+    const obj = hudHits[0].object;
+    if (obj.userData && obj.userData.onSelect){
+      if (obj.userData.highlight) obj.userData.highlight(true);
+      obj.userData.onSelect();
+      setTimeout(function(){ if (obj.userData.highlight) obj.userData.highlight(false); }, 180);
+    }
+    return;
+  }
+
+  const hitMeshes = placed.map(function(p){ return p.hit; });
+  const hits = raycaster.intersectObjects(hitMeshes, false);
+  if (hits.length){
+    const hitMesh = hits[0].object;
+    const item = placed.find(function(p){ return p.hit === hitMesh; });
+    selectItem(item);
+  } else {
+    deselect();
+  }
+}
+
+function onSqueezeStart(controller){
+  setRaycasterFromController(controller);
+
+  const hudHits = raycaster.intersectObjects(hud.children, false);
+  if (hudHits.length){
+    controller.attach(hud);
+    grabbedBy[controller.uuid] = { type:'hud' };
+    return;
+  }
+
+  const hitMeshes = placed.map(function(p){ return p.hit; });
+  const hits = raycaster.intersectObjects(hitMeshes, false);
+  if (!hits.length) return;
+  const hitMesh = hits[0].object;
+  const item = placed.find(function(p){ return p.hit === hitMesh; });
+  if (!item) return;
+  const ctrlPos = new THREE.Vector3();
+  controller.getWorldPosition(ctrlPos);
+  grabbedBy[controller.uuid] = { type:'furniture', item:item, startCtrlPos:ctrlPos.clone(), startGroupPos:item.group.position.clone() };
+  selectItem(item);
+}
+function onSqueezeEnd(controller){
+  const g = grabbedBy[controller.uuid];
+  if (!g) return;
+  if (g.type === 'hud'){
+    scene.attach(hud);
+  } else {
+    const minY = floorOffsetY + (g.item.floorPad || 0);
+    g.item.group.position.y = Math.max(minY, g.item.group.position.y);
+  }
+  delete grabbedBy[controller.uuid];
+}
+
+function render(timestamp, frame){
+  if (frame && !hudPlaced){
+    placeHudOnce();
+  }
+  const DRAG_SPEED = 1.8; // multiplicador: cuánto más rápido se mueve el mueble que la mano
+  Object.keys(grabbedBy).forEach(function(uuid){
+    const g = grabbedBy[uuid];
+    if (g.type !== 'furniture') return;
+    const ctrl = controller1.uuid === uuid ? controller1 : controller2;
+    const ctrlPos = new THREE.Vector3();
+    ctrl.getWorldPosition(ctrlPos);
+    const delta = ctrlPos.clone().sub(g.startCtrlPos).multiplyScalar(DRAG_SPEED);
+    const newPos = g.startGroupPos.clone().add(delta);
+    const minY = floorOffsetY + (g.item.floorPad || 0);
+    newPos.y = Math.max(minY, newPos.y);
+    g.item.group.position.copy(newPos);
+  });
+  placed.forEach(function(item){
+    if (item.outline) item.outline.update();
+  });
+  renderer.render(scene, camera);
+}
+
+init();
+
+if ('serviceWorker' in navigator){
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('sw.js').then(function(reg){
+      reg.addEventListener('updatefound', function(){
+        offlineEl.textContent = 'Descargando copia offline…';
+      });
+      navigator.serviceWorker.ready.then(function(){
+        offlineEl.textContent = 'Lista para usar sin internet.';
+      });
+    }).catch(function(err){
+      offlineEl.textContent = 'No se pudo preparar el modo offline: ' + err.message;
+    });
+  });
+}
+</script>
+</body>
+</html>
